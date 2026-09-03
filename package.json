@@ -1,0 +1,16 @@
+{
+  "name": "openconfig",
+  "productName": "openconfig",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "web": "node server.mjs"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11"
+  }
+}

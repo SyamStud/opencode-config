@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>openconfig — Provider & Model Editor</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>*{font-family:Inter,ui-sans,sans-serif} .mono{font-family:ui-monospace,monospace}
+*::-webkit-scrollbar{ width:0; height:0; }
+*{ scrollbar-width:none; }
+button, summary, [role="button"]{ cursor:pointer; }
+button:disabled{ cursor:not-allowed; }
+input, textarea{ cursor:text; }
+details.provider > summary, details.preview-card > summary { list-style: none; }
+details.provider > summary::-webkit-details-marker, details.preview-card > summary::-webkit-details-marker { display: none; }
+details.provider > summary .chev, details.preview-card > summary .chev { transition: transform 0.15s; display: inline-block; }
+details.provider[open] > summary .chev, details.preview-card[open] > summary .chev { transform: rotate(90deg); }
+details.model-group > summary { list-style: none; }
+details.model-group > summary::-webkit-details-marker { display: none; }
+details.model-group > summary .chev { transition: transform 0.15s; display: inline-block; }
+details.model-group[open] > summary .chev { transform: rotate(90deg); }
+.json-key{ color:#0550ae; }
+.json-string{ color:#0a7a3a; }
+.json-number{ color:#8a5a00; }
+.json-boolean{ color:#7a3ec9; }
+.json-null{ color:#7a3ec9; }</style>
+</head>
+<body class="bg-[#fcfcfd] text-zinc-900 min-h-screen text-[14px] leading-5">
+<header class="z-20 bg-white/80 backdrop-blur-xl border-b border-zinc-200/70 shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
+  <div class="max-w-5xl mx-auto px-6 py-3 flex items-center gap-3">
+    <div class="w-9 h-9 bg-zinc-900 text-white grid place-items-center font-semibold rounded-xl text-[13px] shadow-sm shrink-0">OC</div>
+    <h1 class="font-semibold text-[14px] tracking-tight">openconfig</h1>
+    <div class="ml-auto flex items-center gap-2 shrink-0">
+      <span id="saveState" class="text-[12px] text-zinc-400 mr-1"></span>
+      <button id="btnReload" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white border border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300 text-[14px] font-medium shadow-sm transition">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+        Reload
+      </button>
+      <button id="btnSave" class="inline-flex items-center gap-1.5 px-5 py-2 rounded-full bg-zinc-900 text-white font-medium text-[14px] hover:bg-black shadow-sm transition">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M5 12l5 5L20 7"/></svg>
+        Save
+      </button>
+    </div>
+  </div>
+</header>
+<div id="toast" class="hidden fixed bottom-4 right-4 z-50 px-4 py-3 rounded-xl shadow-xl border text-[14px] max-w-sm"></div>
+
+<main class="max-w-5xl mx-auto px-6 py-8">
+  <div class="mb-6">
+    <h2 class="text-zinc-600 text-[14px] font-semibold uppercase tracking-widest mb-3">Config</h2>
+    <div class="border border-zinc-200 rounded-xl bg-white p-4 flex items-center gap-4">
+      <p id="path" class="mono text-[13px] text-zinc-600 truncate flex-1 min-w-0">loading…</p>
+      <div class="relative shrink-0">
+        <button id="btnBrowse" class="px-4 py-2 rounded-full bg-zinc-900 text-white hover:bg-black text-[13px] font-medium">Browse…</button>
+        <div id="browseMenu" class="hidden absolute right-0 top-full mt-2 w-80 bg-white border border-zinc-200 rounded-xl shadow-xl overflow-hidden z-50">
+          <div class="px-3 py-2 text-[12px] font-semibold text-zinc-500 uppercase tracking-widest">Auto found</div>
+          <div id="candidates" class="px-2 pb-2 space-y-1"></div>
+          <div class="border-t border-zinc-200 p-2">
+            <button id="btnBrowseFile" class="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-50 text-[13px]">Browse file…</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="flex items-center justify-between mb-6">
+    <h2 class="text-zinc-600 text-[14px] font-semibold uppercase tracking-widest">Providers</h2>
+    <button id="btnAddProvider" class="px-4 py-2 rounded-lg bg-white border border-zinc-300 hover:bg-zinc-50 text-[14px] font-medium">+ Provider</button>
+  </div>
+  <div id="providers" class="space-y-5"></div>
+
+  <div class="mt-10">
+    <h2 class="text-zinc-600 text-[14px] font-semibold uppercase tracking-widest mb-3">Preview</h2>
+    <details class="preview-card border border-zinc-200 rounded-xl bg-white overflow-hidden">
+      <summary class="px-5 py-3 text-[14px] text-zinc-600 cursor-pointer font-medium flex items-center gap-2 hover:bg-zinc-50">
+        <span class="chev text-[11px] text-zinc-400">▶</span>
+        <span>Raw JSON preview</span>
+      </summary>
+      <pre id="raw" class="p-5 text-[14px] mono overflow-auto max-h-[400px] bg-zinc-50 border-t border-zinc-200 leading-5"></pre>
+    </details>
+  </div>
+</main>
+
+<div id="fetchModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40" id="fetchBackdrop"></div>
+  <div class="relative bg-white rounded-2xl border border-zinc-200 shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+    <div class="px-6 py-4 border-b border-zinc-200 flex items-center justify-between">
+      <h3 class="font-semibold text-[14px]">Pilih model dari <span id="fetchProvider" class="mono text-zinc-600"></span></h3>
+      <button id="fetchClose" class="text-zinc-400 hover:text-zinc-900 text-[14px] px-2">✕</button>
+    </div>
+    <div class="px-6 py-3 border-b border-zinc-200 flex items-center gap-3 bg-zinc-50">
+      <label class="flex items-center gap-2 text-[14px] cursor-pointer"><input type="checkbox" id="fetchCheckAll"/> Pilih semua</label>
+      <span id="fetchCount" class="ml-auto text-[14px] text-zinc-500">0 dipilih</span>
+      <span id="fetchLoading" class="hidden text-[14px] text-zinc-500">Loading…</span>
+    </div>
+    <div id="fetchList" class="flex-1 overflow-auto p-2 space-y-1"></div>
+    <div class="px-6 py-4 border-t border-zinc-200 flex justify-end gap-2">
+      <button id="fetchCancel" class="px-4 py-2 rounded-lg bg-white border border-zinc-300 text-[14px] hover:bg-zinc-50">Batal</button>
+      <button id="fetchAdd" class="px-5 py-2 rounded-lg bg-zinc-900 text-white text-[14px] hover:bg-black">Add dipilih</button>
+    </div>
+  </div>
+</div>
+
+<template id="tplProvider">
+  <details class="provider border border-zinc-200 rounded-xl bg-white overflow-hidden">
+    <summary class="px-5 py-3 text-[14px] text-zinc-600 cursor-pointer font-medium flex items-center gap-2 hover:bg-zinc-50">
+      <span class="chev text-[11px] text-zinc-400">▶</span>
+      <span data-k="summaryTitle">provider</span>
+      <span class="text-zinc-400 font-normal" data-k="summarySub"></span>
+      <span class="ml-auto text-[14px] bg-zinc-50 border border-zinc-200 rounded-full px-2.5 py-0.5" data-k="summaryCount">0 models</span>
+      <button data-act="delProvider" class="ml-2 text-zinc-400 hover:text-red-600 px-1 text-[14px]" onclick="event.preventDefault()">✕</button>
+    </summary>
+    <div class="border-t border-zinc-200 p-6 flex items-start gap-4">
+      <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label class="space-y-1.5">
+          <span class="text-[14px] font-medium text-zinc-700">Provider ID (key) *</span>
+          <input data-k="id" placeholder="contoh: omniroute" class="w-full px-3.5 py-2.5 rounded-lg bg-white border border-zinc-300 text-[14px] mono focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 outline-none"/>
+        </label>
+        <label class="space-y-1.5">
+          <span class="text-[14px] font-medium text-zinc-700">Display Name</span>
+          <input data-k="name" placeholder="Omniroute" class="w-full px-3.5 py-2.5 rounded-lg bg-white border border-zinc-300 text-[14px] focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 outline-none"/>
+        </label>
+        <label class="space-y-1.5">
+          <span class="text-[14px] font-medium text-zinc-700">npm package</span>
+          <input data-k="npm" placeholder="@ai-sdk/openai-compatible" class="w-full px-3.5 py-2.5 rounded-lg bg-white border border-zinc-300 text-[14px] mono focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 outline-none"/>
+        </label>
+        <label class="space-y-1.5">
+          <span class="text-[14px] font-medium text-zinc-700">baseURL</span>
+          <input data-k="baseURL" placeholder="http://localhost:20128/v1" class="w-full px-3.5 py-2.5 rounded-lg bg-white border border-zinc-300 text-[14px] mono focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 outline-none"/>
+        </label>
+        <label class="md:col-span-2 space-y-1.5">
+          <span class="text-[14px] font-medium text-zinc-700">apiKey (kosongkan jika pakai env)</span>
+          <div class="flex gap-2">
+            <input data-k="apiKey" type="password" placeholder="sk-..." class="flex-1 px-3.5 py-2.5 rounded-lg bg-white border border-zinc-300 text-[14px] mono focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 outline-none"/>
+            <button data-act="toggleKey" class="px-3 text-[14px] border border-zinc-300 rounded-lg hover:bg-zinc-50 bg-white">show</button>
+          </div>
+        </label>
+      </div>
+    </div>
+    <div class="border-t border-zinc-200 px-6 py-4 bg-zinc-50">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-[14px] font-semibold uppercase tracking-widest text-zinc-600">Models</span>
+        <div class="flex gap-2">
+          <button data-act="fetchModels" class="text-[14px] px-3.5 py-1.5 rounded-lg bg-white border border-zinc-300 hover:bg-zinc-50">↻ Fetch models</button>
+          <button data-act="addModel" class="text-[14px] px-3.5 py-1.5 rounded-lg bg-zinc-900 text-white hover:bg-black">+ Model</button>
+        </div>
+      </div>
+      <div data-slot="models" class="space-y-2.5"></div>
+    </div>
+  </details>
+</template>
+
+<template id="tplModel">
+  <div class="model flex gap-3 items-center bg-white border border-zinc-200 rounded-xl px-3 py-3 shadow-sm">
+    <input data-mk="id" placeholder="model id — ex: cmd/deepseek/deepseek-v4-pro" class="flex-[2] px-3 py-2 rounded-lg bg-white border border-zinc-300 text-[14px] mono focus:border-zinc-900 outline-none"/>
+    <input data-mk="name" placeholder="Display name" class="flex-1 px-3 py-2 rounded-lg bg-white border border-zinc-300 text-[14px] focus:border-zinc-900 outline-none"/>
+    <button data-act="delModel" class="text-zinc-400 hover:text-red-600 text-[14px] px-1">✕</button>
+  </div>
+</template>
+
+<template id="tplGroup">
+  <details class="model-group border border-zinc-200 rounded-lg bg-white overflow-hidden" open>
+    <summary class="px-3 py-2 text-[13px] text-zinc-600 cursor-pointer font-medium flex items-center gap-2 hover:bg-zinc-50">
+      <span class="chev text-[10px] text-zinc-400">▶</span>
+      <span data-g="title" class="mono">prefix</span>
+      <span class="ml-auto text-[11px] bg-zinc-50 border border-zinc-200 rounded-full px-2 py-0.5" data-g="count">0</span>
+    </summary>
+    <div data-g="body" class="p-2 space-y-2 border-t border-zinc-200 bg-zinc-50/50"></div>
+  </details>
+</template>
+
+<script>
+let state = { $schema:"https://opencode.ai/config.json", provider:{} };
+let origPath = "";
+const core = window.__TAURI__?.core;
+const tauriApi = core ? {
+  load: ()=> core.invoke("cmd_load_config"),
+  save: (c)=> core.invoke("cmd_save_config", { config: c }),
+  browse: ()=> core.invoke("cmd_browse_config"),
+  searchConfigs: ()=> core.invoke("cmd_search_configs"),
+  useConfig: (p)=> core.invoke("cmd_use_config", { path: p }),
+  fetchModels: (p)=> core.invoke("cmd_fetch_models", { base_url: p.base_url, api_key: p.api_key }),
+  close: ()=>{}, minimize: ()=>{}, maximize: ()=>{}, isMaximized: ()=>Promise.resolve(false)
+} : null;
+const tauriInvoke = core ? (cmd,args)=> core.invoke(cmd,args) : null;
+const api = tauriApi;
+const $ = s=>document.querySelector(s);
+const providersEl = $("#providers");
+const tplP = $("#tplProvider"), tplM = $("#tplModel"), tplG = $("#tplGroup");
+function toast(msg, ok=true){
+  const t=$("#toast");
+  t.textContent=msg; t.className=`fixed bottom-4 right-4 z-50 px-4 py-3 rounded-xl shadow-xl border text-[14px] max-w-sm ${ok?'bg-white border-zinc-200 text-zinc-900':'bg-red-50 border-red-200 text-red-700'}`;
+  t.classList.remove("hidden"); setTimeout(()=>t.classList.add("hidden"),3200);
+}
+function escHtml(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function highlightJson(obj){
+  let json = JSON.stringify(obj, null, 2);
+  json = escHtml(json);
+  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, m=>{
+    let cls = "json-number";
+    if (/^"/.test(m)) cls = /:$/.test(m) ? "json-key" : "json-string";
+    else if (/true|false/.test(m)) cls = "json-boolean";
+    else if (/null/.test(m)) cls = "json-null";
+    return `<span class="${cls}">${m}</span>`;
+  });
+}
+function groupOf(id){ const i=(id||"").indexOf("/"); return i>0 ? id.slice(0,i) : "lainnya"; }
+function buildGroup(prefix, open=true){
+  const g = tplG.content.cloneNode(true).querySelector(".model-group");
+  g.dataset.group = prefix;
+  g.querySelector('[data-g="title"]').textContent = prefix;
+  if(open) g.setAttribute("open",""); else g.removeAttribute("open");
+  return g;
+}
+function ensureGroup(card, prefix){
+  let g = null;
+  try{ g = card.querySelector(`[data-group="${CSS.escape(prefix)}"]`); }
+  catch(e){ g = [...card.querySelectorAll(".model-group")].find(x=>x.dataset.group===prefix) || null; }
+  if(!g){
+    g = buildGroup(prefix, true);
+    card.querySelector('[data-slot="models"]').appendChild(g);
+  }
+  return g;
+}
+function updateGroupCount(g){
+  const n = g.querySelectorAll(".model").length;
+  const c = g.querySelector('[data-g="count"]');
+  if(c) c.textContent = n + (n===1 ? " model" : " models");
+}
+function updSummary(card){
+  const pid = card.querySelector('[data-k="id"]')?.value.trim() || card.dataset.pid || "provider";
+  const name = card.querySelector('[data-k="name"]')?.value.trim() || "";
+  const base = card.querySelector('[data-k="baseURL"]')?.value.trim() || "";
+  const count = card.querySelectorAll(".model").length;
+  const t = card.querySelector('[data-k="summaryTitle"]'); if(t) t.textContent = name ? `${pid} — ${name}` : pid;
+  const s = card.querySelector('[data-k="summarySub"]'); if(s) s.textContent = base || (card.querySelector('[data-k="npm"]')?.value.trim()||"");
+  const c = card.querySelector('[data-k="summaryCount"]'); if(c) c.textContent = count + " models";
+}
+function render(){
+  const openP=new Set([...document.querySelectorAll("#providers .provider[open]")].map(d=>d.dataset.pid));
+  const openG=new Set([...document.querySelectorAll("#providers .model-group[open]")].map(g=>((g.closest(".provider")||{}).dataset||{}).pid+"::"+g.dataset.group));
+  providersEl.innerHTML="";
+  for(const [pid,p] of Object.entries(state.provider||{})){
+    const n = tplP.content.cloneNode(true);
+    const root = n.querySelector(".provider");
+    root.dataset.pid = pid;
+    n.querySelector('[data-k="id"]').value = pid;
+    n.querySelector('[data-k="name"]').value = p.name||"";
+    n.querySelector('[data-k="npm"]').value = p.npm||"";
+    n.querySelector('[data-k="baseURL"]').value = p.options?.baseURL||"";
+    n.querySelector('[data-k="apiKey"]').value = p.options?.apiKey||"";
+    const slot = n.querySelector('[data-slot="models"]');
+    const entries = Object.entries(p.models||{});
+    if(!entries.length){
+      const g = buildGroup("lainnya", false);
+      const mn = tplM.content.cloneNode(true);
+      mn.querySelector('[data-mk="id"]').placeholder="kosong — klik + Model";
+      g.querySelector('[data-g="body"]').appendChild(mn);
+      updateGroupCount(g);
+      slot.appendChild(g);
+    } else {
+      const groups = {};
+      for(const [mid,m] of entries){ const k=groupOf(mid); (groups[k]=groups[k]||[]).push([mid,m]); }
+      const keys = Object.keys(groups).sort((a,b)=> a==="lainnya"?1 : b==="lainnya"?-1 : a.localeCompare(b));
+      for(const k of keys){
+        const g = buildGroup(k, openG.has(pid+"::"+k));
+        const body = g.querySelector('[data-g="body"]');
+        for(const [mid,m] of groups[k]){
+          const mn = tplM.content.cloneNode(true);
+          mn.querySelector('[data-mk="id"]').value = mid;
+          mn.querySelector('[data-mk="name"]').value = m.name||"";
+          body.appendChild(mn);
+        }
+        updateGroupCount(g);
+        slot.appendChild(g);
+      }
+    }
+    if(openP.has(pid)) root.setAttribute("open","");
+    providersEl.appendChild(n);
+  }
+  document.querySelectorAll("#providers .provider").forEach(updSummary);
+  $("#raw").innerHTML = highlightJson(state);
+}
+function collect(){
+  const next={...state, provider:{}};
+  for(const card of document.querySelectorAll("#providers .provider")){
+    const idEl = card.querySelector('[data-k="id"]');
+    if(!idEl) continue;
+    const pid = idEl.value.trim();
+    if(!pid) continue;
+    const name = card.querySelector('[data-k="name"]').value.trim();
+    const npm = card.querySelector('[data-k="npm"]').value.trim()||"@ai-sdk/openai-compatible";
+    const baseURL = card.querySelector('[data-k="baseURL"]').value.trim();
+    const apiKey = card.querySelector('[data-k="apiKey"]').value.trim();
+    const models={};
+    for(const row of card.querySelectorAll(".model")){
+      const mid=row.querySelector('[data-mk="id"]').value.trim();
+      const mname=row.querySelector('[data-mk="name"]').value.trim();
+      if(!mid) continue;
+      models[mid]= mname?{name:mname}:{};
+    }
+    next.provider[pid]={ npm, name: name||pid, options:{}, models };
+    if(baseURL) next.provider[pid].options.baseURL=baseURL;
+    if(apiKey) next.provider[pid].options.apiKey=apiKey;
+    if(!Object.keys(next.provider[pid].options).length) delete next.provider[pid].options;
+  }
+  return next;
+}
+function setPathDisplay(j){
+  $("#path").textContent = j.path;
+  const w = document.getElementById("wslPath"); if(w) w.textContent = j.wslPath || j.path;
+}
+async function loadCandidates(){
+  if(!api?.searchConfigs) return;
+  try{
+    const list = await api.searchConfigs();
+    const el = document.getElementById("candidates");
+    if(!list.length){ el.innerHTML='<p class="text-[13px] text-zinc-500 px-3 py-6 text-center">Tidak ada config auto found</p>'; return; }
+    el.innerHTML = list.map(c=> `<button data-pick="${c.path}" class="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-50 flex items-center gap-2"><span class="mono text-[13px] truncate flex-1">${c.path}</span><span class="text-[11px] bg-zinc-100 border border-zinc-200 rounded-full px-1.5 py-0.5 shrink-0">${(c.size/1024).toFixed(1)}k</span></button>`).join("");
+    el.querySelectorAll("[data-pick]").forEach(b=> b.onclick=async()=>{
+      const p=b.getAttribute("data-pick");
+      document.getElementById("browseMenu").classList.add("hidden");
+      if(api?.useConfig){
+        try{
+          const j = await api.useConfig(p);
+          state=j.config; origPath=j.path; setPathDisplay(j);
+          if(!state.provider) state.provider={};
+          if(!state.$schema) state.$schema="https://opencode.ai/config.json";
+          render(); toast("Berpindah ke "+p);
+        } catch(e){ toast(e.message,false); }
+      }
+    });
+  }catch{}
+}
+async function load(){
+  try{
+    const j = api ? await api.load() : await fetch("/api/config").then(r=>r.json());
+    if(j.error) return toast(j.error,false);
+    state=j.config; origPath=j.path;
+    setPathDisplay(j);
+    if(!state.provider) state.provider={};
+    if(!state.$schema) state.$schema="https://opencode.ai/config.json";
+    render();
+    loadCandidates();
+  }catch(e){ toast(e.message,false); }
+}
+async function save(){
+  clearTimeout(saveTimer);
+  const next=collect();
+  if(!Object.keys(next.provider).length) return toast("Minimal 1 provider dengan ID terisi",false);
+  state=next; render();
+  try{
+    if(api) await api.save(state);
+    else {
+      const r=await fetch("/api/config",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({config:state})});
+      const j=await r.json(); if(!r.ok) throw new Error(j.error);
+    }
+    toast("Tersimpan ✓");
+    setSaveState(stamp());
+  }catch(e){ toast(e.message||"Gagal save",false); }
+}
+let saveTimer=null;
+function setSaveState(t, err=false){
+  const el=$("#saveState"); if(!el) return;
+  el.textContent=t;
+  el.className="text-[12px] mr-1 "+(err?"text-red-500":"text-zinc-400");
+}
+function stamp(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return "auto save - "+p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds()); }
+async function autoSave(){
+  try{
+    const next=collect();
+    if(!Object.keys(next.provider).length) return;
+    state=next;
+    if(api) await api.save(state);
+    else {
+      const r=await fetch("/api/config",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({config:state})});
+      const j=await r.json(); if(!r.ok) throw new Error(j.error);
+    }
+    $("#raw").innerHTML=highlightJson(state);
+    setSaveState(stamp());
+  }catch(e){ setSaveState("gagal autosave", true); }
+}
+function scheduleAutosave(){ setSaveState("● mengetik…"); clearTimeout(saveTimer); saveTimer=setTimeout(autoSave, 800); }
+let fetchCtx = null;
+function openFetchModal(card){
+  const baseURL = card.querySelector('[data-k="baseURL"]').value.trim();
+  const apiKey = card.querySelector('[data-k="apiKey"]').value.trim();
+  if(!baseURL) return toast("Isi baseURL dulu", false);
+  fetchCtx = card;
+  $("#fetchProvider").textContent = card.querySelector('[data-k="id"]').value.trim() || "provider";
+  $("#fetchList").innerHTML = "";
+  $("#fetchCount").textContent = "0 dipilih";
+  $("#fetchCheckAll").checked = false;
+  $("#fetchModal").classList.remove("hidden");
+  $("#fetchLoading").classList.remove("hidden");
+  $("#fetchAdd").disabled = true;
+  const doFetch = api?.fetchModels ? api.fetchModels({ base_url: baseURL, api_key: apiKey }) : fetch(baseURL.replace(/\/$/,"")+"/models", { headers: apiKey?{Authorization:`Bearer ${apiKey}`}:{} }).then(r=>{ if(!r.ok) throw new Error(r.statusText); return r.json(); }).then(j=> (j.data||j.models||j).map(m=> typeof m==="string"?m:m.id));
+  doFetch.then(list=>{
+    $("#fetchLoading").classList.add("hidden");
+    $("#fetchAdd").disabled = false;
+    const existing = new Set([...card.querySelectorAll('[data-mk="id"]')].map(i=>i.value.trim()).filter(Boolean));
+    if(!list.length) { $("#fetchList").innerHTML = '<p class="text-[14px] text-zinc-500 p-4 text-center">Tidak ada model</p>'; return; }
+    $("#fetchList").innerHTML = list.map(id=>`
+      <label class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-zinc-50 cursor-pointer border border-transparent hover:border-zinc-200 ${existing.has(id)?'opacity-50':''}">
+        <input type="checkbox" value="${id}" ${existing.has(id)?'disabled':''} class="fetchCB"/>
+        <span class="mono text-[14px] flex-1 truncate">${id}</span>
+        ${existing.has(id)?'<span class="text-[14px] text-zinc-400">sudah ada</span>':''}
+      </label>
+    `).join("");
+    updateFetchCount();
+  }).catch(e=>{
+    $("#fetchLoading").classList.add("hidden");
+    const msg = String((e && e.message) || e || "Error");
+    toast("Fetch gagal: "+msg, false);
+    $("#fetchList").innerHTML = `<p class="text-[14px] text-red-600 p-4">${msg}</p>`;
+  });
+}
+function updateFetchCount(){
+  const n = document.querySelectorAll(".fetchCB:checked").length;
+  $("#fetchCount").textContent = n+" dipilih";
+}
+function closeFetchModal(){ $("#fetchModal").classList.add("hidden"); fetchCtx=null; }
+
+providersEl.addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  const act=b.dataset.act;
+  if(act==="delProvider"){ b.closest(".provider").remove(); state=collect(); render(); toast("Provider dihapus (belum tersimpan)"); scheduleAutosave(); }
+  if(act==="fetchModels"){ openFetchModal(b.closest(".provider")); }
+  if(act==="addModel"){
+    const card=b.closest(".provider");
+    card.open=true;
+    const g=ensureGroup(card,"lainnya");
+    g.open=true;
+    g.querySelector('[data-g="body"]').prepend(tplM.content.cloneNode(true));
+    updateGroupCount(g);
+    updSummary(card);
+    scheduleAutosave();
+  }
+  if(act==="delModel"){ const c=b.closest(".provider"); const g=b.closest(".model-group"); b.closest(".model").remove(); if(g){ if(!g.querySelector(".model")) g.remove(); else updateGroupCount(g); } if(c) updSummary(c); scheduleAutosave(); }
+  if(act==="toggleKey"){
+    const inp=b.parentElement.querySelector("input");
+    inp.type=inp.type==="password"?"text":"password";
+    b.textContent=inp.type==="password"?"show":"hide";
+  }
+});
+$("#btnAddProvider").onclick=()=>{
+  state=collect();
+  if(!state.provider) state.provider={};
+  let id;
+  do{ id="provider-"+Math.random().toString(36).slice(2,6); } while(state.provider[id]);
+  const entry={[id]:{npm:"@ai-sdk/openai-compatible",name:"New Provider",models:{}}};
+  state.provider={...entry, ...state.provider};
+  render();
+  const first=document.querySelector(".provider");
+  if(first) first.open=true;
+  first?.scrollIntoView({behavior:"smooth",block:"start"});
+  scheduleAutosave();
+};
+const browseMenu=document.getElementById("browseMenu");
+$("#btnBrowse").onclick=()=>{
+  browseMenu.classList.toggle("hidden");
+  if(!browseMenu.classList.contains("hidden")) loadCandidates();
+};
+$("#btnBrowseFile").onclick=async()=>{
+  browseMenu.classList.add("hidden");
+  if(!api?.browse) return toast("Browse hanya di Electron", false);
+  const j = await api.browse();
+  if(!j) return;
+  state=j.config; origPath=j.path; setPathDisplay(j);
+  if(!state.provider) state.provider={};
+  if(!state.$schema) state.$schema="https://opencode.ai/config.json";
+  render(); toast("Membuka "+j.path);
+};
+document.addEventListener("click",e=>{
+  if(!browseMenu.contains(e.target) && e.target!==document.getElementById("btnBrowse")) browseMenu.classList.add("hidden");
+});
+$("#btnSave").onclick=save;
+$("#btnReload").onclick=load;
+$("#fetchClose").onclick=closeFetchModal;
+$("#fetchCancel").onclick=closeFetchModal;
+$("#fetchBackdrop").onclick=closeFetchModal;
+$("#fetchCheckAll").onchange=e=>{
+  document.querySelectorAll(".fetchCB:not(:disabled)").forEach(cb=> cb.checked=e.target.checked);
+  updateFetchCount();
+};
+document.getElementById("fetchList").addEventListener("change", updateFetchCount);
+$("#fetchAdd").onclick=()=>{
+  if(!fetchCtx) return;
+  const ids=[...document.querySelectorAll(".fetchCB:checked")].map(cb=>cb.value);
+  if(!ids.length) return toast("Pilih minimal 1 model", false);
+  const existing=new Set([...fetchCtx.querySelectorAll('[data-mk="id"]')].map(i=>i.value.trim()));
+  ids.forEach(id=>{
+    if(existing.has(id)) return;
+    const g=ensureGroup(fetchCtx, groupOf(id));
+    const row=tplM.content.cloneNode(true);
+    row.querySelector('[data-mk="id"]').value=id;
+    row.querySelector('[data-mk="name"]').value=id.split("/").pop();
+    g.querySelector('[data-g="body"]').appendChild(row);
+    updateGroupCount(g);
+  });
+  fetchCtx.open=true;
+  updSummary(fetchCtx);
+  $("#raw").innerHTML=highlightJson(collect());
+  toast(ids.length+" model ditambahkan (belum save)");
+  closeFetchModal();
+  scheduleAutosave();
+};
+providersEl.addEventListener("input",e=>{
+  $("#raw").innerHTML=highlightJson(collect());
+  const card = e.target.closest(".provider"); if(card) updSummary(card);
+  scheduleAutosave();
+});
+load();
+</script>
+</body>
+</html>
