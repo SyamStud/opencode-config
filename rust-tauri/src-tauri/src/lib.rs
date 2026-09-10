@@ -100,8 +100,51 @@ fn strip_jsonc(raw: &str) -> Option<String> {
     if in_str || in_block {
         None
     } else {
-        Some(out)
+        Some(remove_trailing_commas(&out))
     }
+}
+
+fn remove_trailing_commas(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '"' {
+            out.push(c);
+            i += 1;
+            while i < chars.len() {
+                out.push(chars[i]);
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    out.push(chars[i + 1]);
+                    i += 2;
+                    continue;
+                }
+                if chars[i] == '"' {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        if c == ',' {
+            let mut j = i + 1;
+            while j < chars.len() && chars[j].is_whitespace() {
+                j += 1;
+            }
+            if j < chars.len() && (chars[j] == '}' || chars[j] == ']') {
+                i = j;
+                continue;
+            }
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
 }
 
 fn read_config(path: &PathBuf) -> Result<serde_json::Value, String> {
@@ -273,4 +316,26 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_jsonc_with_trailing_comma() {
+        let raw = "{\n  \"provider\": {\n    \"9router\": { \"models\": {} },\n  }\n}\n";
+        let clean = strip_jsonc(raw).expect("should strip");
+        let v: serde_json::Value = serde_json::from_str(&clean).expect("should parse");
+        assert!(v["provider"].is_object());
+    }
+
+    #[test]
+    fn keeps_commas_inside_strings_and_arrays() {
+        let raw = r#"{ "a": "x, y", "b": [1, 2,] }"#;
+        let clean = strip_jsonc(raw).expect("should strip");
+        let v: serde_json::Value = serde_json::from_str(&clean).expect("should parse");
+        assert_eq!(v["a"], "x, y");
+        assert_eq!(v["b"], serde_json::json!([1, 2]));
+    }
 }

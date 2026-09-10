@@ -4,7 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>openconfig — Provider & Model Editor</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<script src="./tailwind.js"></script>
 <style>*{font-family:Inter,ui-sans,sans-serif} .mono{font-family:ui-monospace,monospace}
 *::-webkit-scrollbar{ width:0; height:0; }
 *{ scrollbar-width:none; }
@@ -341,7 +341,7 @@ async function load(){
     if(!state.$schema) state.$schema="https://opencode.ai/config.json";
     render();
     loadCandidates();
-  }catch(e){ toast(e.message,false); }
+  }catch(e){ toast((e&&e.message)||String(e),false); }
 }
 async function save(){
   clearTimeout(saveTimer);

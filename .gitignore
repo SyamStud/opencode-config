@@ -1,3 +1,4 @@
 node_modules/
 **/target/
+rust-tauri/rust_out
 *.log
