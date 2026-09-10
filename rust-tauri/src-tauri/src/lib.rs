@@ -24,7 +24,61 @@ struct CandidateInfo {
 }
 
 fn wsl_path(p: &str) -> String {
+    if p.starts_with("\\\\") {
+        return p.to_string();
+    }
     format!("\\\\wsl.localhost\\Ubuntu{p}")
+}
+
+#[cfg(windows)]
+fn wsl_distro_roots() -> Vec<String> {
+    let mut roots = Vec::new();
+    for share in ["\\\\wsl.localhost\\", "\\\\wsl$\\"] {
+        if let Ok(rd) = std::fs::read_dir(share) {
+            for e in rd.flatten() {
+                if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    if let Some(name) = e.file_name().to_str() {
+                        roots.push(format!("{share}{name}"));
+                    }
+                }
+            }
+        }
+        if !roots.is_empty() {
+            break;
+        }
+    }
+    roots
+}
+
+#[cfg(not(windows))]
+fn wsl_distro_roots() -> Vec<String> {
+    Vec::new()
+}
+
+fn wsl_config_candidates() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for root in wsl_distro_roots() {
+        out.push(PathBuf::from(format!(
+            "{root}\\root\\.config\\opencode\\opencode.jsonc"
+        )));
+        out.push(PathBuf::from(format!(
+            "{root}\\root\\.config\\opencode\\opencode.json"
+        )));
+        let home_root = format!("{root}\\home");
+        if let Ok(rd) = std::fs::read_dir(&home_root) {
+            for e in rd.flatten() {
+                if let Some(user) = e.file_name().to_str() {
+                    out.push(PathBuf::from(format!(
+                        "{home_root}\\{user}\\.config\\opencode\\opencode.jsonc"
+                    )));
+                    out.push(PathBuf::from(format!(
+                        "{home_root}\\{user}\\.config\\opencode\\opencode.json"
+                    )));
+                }
+            }
+        }
+    }
+    out
 }
 
 fn find_config() -> PathBuf {
@@ -149,7 +203,9 @@ fn remove_trailing_commas(s: &str) -> String {
 
 fn read_config(path: &PathBuf) -> Result<serde_json::Value, String> {
     if !path.exists() {
-        return Ok(serde_json::json!({ "$schema": "https://opencode.ai/config.json", "provider": {} }));
+        return Ok(
+            serde_json::json!({ "$schema": "https://opencode.ai/config.json", "provider": {} }),
+        );
     }
     let raw = std::fs::read_to_string(path).map_err(|e| format!("Read: {e}"))?;
     let clean = strip_jsonc(&raw).ok_or("JSONC invalid")?;
@@ -180,14 +236,16 @@ fn search_candidates() -> Vec<CandidateInfo> {
         .unwrap_or_else(|_| home.join(".config"));
     let mut seen = Vec::new();
     let mut out = Vec::new();
-    for p in [
+    let mut candidates = vec![
         xdg.join("opencode/opencode.jsonc"),
         xdg.join("opencode/opencode.json"),
         home.join(".config/opencode/opencode.jsonc"),
         home.join(".config/opencode/opencode.json"),
         PathBuf::from("/home/lenovo/.config/opencode/opencode.jsonc"),
         PathBuf::from("/home/lenovo/.config/opencode/opencode.json"),
-    ] {
+    ];
+    candidates.extend(wsl_config_candidates());
+    for p in candidates {
         let s = p.display().to_string();
         if seen.contains(&s) {
             continue;
@@ -208,16 +266,52 @@ fn cmd_load_config(state: tauri::State<Mutex<PathBuf>>) -> Result<ConfigInfo, St
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn cmd_save_config(state: tauri::State<Mutex<PathBuf>>, config: serde_json::Value) -> Result<(), String> {
+fn cmd_save_config(
+    state: tauri::State<Mutex<PathBuf>>,
+    config: serde_json::Value,
+) -> Result<(), String> {
     let path = state.lock().unwrap().clone();
     write_config(&path, &config)
 }
 
+#[cfg(windows)]
+fn wsl_browse_start() -> Option<PathBuf> {
+    for root in wsl_distro_roots() {
+        let home_root = PathBuf::from(format!("{root}\\home"));
+        if let Ok(rd) = std::fs::read_dir(&home_root) {
+            for e in rd.flatten() {
+                let dir = e.path().join(".config").join("opencode");
+                if dir.is_dir() {
+                    return Some(dir);
+                }
+            }
+        }
+        let root_dir = PathBuf::from(format!("{root}\\root\\.config\\opencode"));
+        if root_dir.is_dir() {
+            return Some(root_dir);
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+fn wsl_browse_start() -> Option<PathBuf> {
+    None
+}
+
 #[tauri::command(rename_all = "snake_case")]
 fn cmd_browse_config(state: tauri::State<Mutex<PathBuf>>) -> Result<Option<ConfigInfo>, String> {
-    let picked = rfd::FileDialog::new()
-        .add_filter("opencode config", &["jsonc", "json"])
-        .pick_file();
+    let current = state.lock().unwrap().clone();
+    let mut dialog = rfd::FileDialog::new().add_filter("opencode config", &["jsonc", "json"]);
+    let start = current
+        .parent()
+        .filter(|p| p.is_dir())
+        .map(PathBuf::from)
+        .or_else(wsl_browse_start);
+    if let Some(dir) = start {
+        dialog = dialog.set_directory(dir);
+    }
+    let picked = dialog.pick_file();
     let Some(p) = picked else {
         return Ok(None);
     };
@@ -245,7 +339,10 @@ fn cmd_search_configs() -> Vec<CandidateInfo> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-async fn cmd_fetch_models(base_url: String, api_key: Option<String>) -> Result<Vec<String>, String> {
+async fn cmd_fetch_models(
+    base_url: String,
+    api_key: Option<String>,
+) -> Result<Vec<String>, String> {
     if base_url.trim().is_empty() {
         return Err("baseURL kosong".into());
     }
